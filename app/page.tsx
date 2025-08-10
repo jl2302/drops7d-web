@@ -1,32 +1,29 @@
 // app/page.tsx
-import { format } from "date-fns";
-import { PrismaClient } from "@prisma/client";
-import { unstable_noStore as noStore } from "next/cache";
+import { format } from 'date-fns';
+import { prisma } from '@/lib/prisma';
+import { unstable_noStore as noStore } from 'next/cache';
 
-// Allowed segment options
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-// Prisma singleton (not exported)
-const g = globalThis as unknown as { _prisma?: PrismaClient };
-const prisma = g._prisma ?? new PrismaClient({ log: ["warn", "error"] });
-if (process.env.NODE_ENV !== "production") g._prisma = prisma;
 
 function lastNDays(n: number): string[] {
   const out: string[] = [];
   const today = new Date();
   for (let i = 0; i < n; i++) {
-    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const d = new Date(Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate()
+    ));
     d.setUTCDate(d.getUTCDate() - i);
-    out.push(format(d, "yyyy-MM-dd"));
+    out.push(format(d, 'yyyy-MM-dd'));
   }
   return out;
 }
 
-// handle Decimal/string/number
 function toNum(v: unknown): number {
   if (v === null || v === undefined) return 0;
-  if (typeof v === "number") return v;
+  if (typeof v === 'number') return v;
   return Number((v as any).toString?.() ?? v);
 }
 
@@ -41,7 +38,7 @@ export default async function Page() {
       const drops = await prisma.drop.findMany({
         where: { date: { gte: start, lte: end } },
         include: { company: true },
-        orderBy: [{ pctDrop: "desc" }, { dollarDrop: "desc" }],
+        orderBy: [{ pctDrop: 'desc' }, { dollarDrop: 'desc' }],
       });
       return { day, drops };
     })
