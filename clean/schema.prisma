@@ -1,13 +1,79 @@
-generator client {
-  provider = "prisma-client-js"
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+model Company {
+  id          Int      @id @default(autoincrement())
+  ticker      String   @unique
+  name        String?
+  sector      String?
+  industry    String?
+  marketCap   BigInt?
+  floatShares BigInt?
+  isETF       Boolean  @default(false)
+  cik         String?
+  drops       Drop[]
+  reasons     Reason[]
+  priors      PriorEvidence[]
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+model Drop {
+  id          Int      @id @default(autoincrement())
+  date        DateTime
+  prevClose   Float
+  close       Float
+  pctDrop     Float
+  dollarDrop  Float
+  priceSource String
+  company     Company  @relation(fields: [companyId], references: [id])
+  companyId   Int
+
+  @@unique([companyId, date])
+  @@index([date])
 }
 
-model Ping {
-  id Int  @id @default(autoincrement())
-  txt String
+model Reason {
+  id              Int      @id @default(autoincrement())
+  date            DateTime
+  summary         String
+  confidence      String
+  llmProviderUsed String?
+  llmOpenAIText   String?
+  llmXAIText      String?
+  sources         Source[]
+  company         Company  @relation(fields: [companyId], references: [id])
+  companyId       Int
+
+  @@unique([companyId, date])
+  @@index([date])
+}
+
+model Source {
+  id          Int     @id @default(autoincrement())
+  source      String
+  title       String
+  url         String
+  snippet     String?
+  publishedAt DateTime?
+  quote       String?
+  quoteWords  Int?
+  reason      Reason  @relation(fields: [reasonId], references: [id], onDelete: Cascade)
+  reasonId    Int
+}
+
+model PriorEvidence {
+  id          Int      @id @default(autoincrement())
+  date        DateTime
+  kind        String
+  title       String
+  url         String
+  source      String?
+  publishedAt DateTime?
+  quote       String?
+  quoteWords  Int?
+  note        String?
+  company     Company   @relation(fields: [companyId], references: [id])
+  companyId   Int
+
+  @@index([date])
+  @@index([kind])
 }
