@@ -9,5 +9,5 @@ datasource db {
 
 model Ping {
   id Int  @id @default(autoincrement())
-  txt string
+  txt String
 }
