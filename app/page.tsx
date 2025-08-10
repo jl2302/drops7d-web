@@ -1,6 +1,6 @@
 // app/page.tsx
 import { format } from 'date-fns';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../lib/prisma';
 import { unstable_noStore as noStore } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
