@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.7.1",
   "scripts": {
-  "postinstall": "prisma db push --schema=./clean/schema.prisma && prisma generate --schema=./clean/schema.prisma",
+  "postinstall": "prisma db push --schema=./clean/schema.prisma --accept-data-loss && prisma generate --schema=./clean/schema.prisma",
   "dev": "next dev",
   "build": "next build",
   "start": "next start"
