@@ -1,16 +1,16 @@
 // app/page.tsx
 import { format } from "date-fns";
 import { PrismaClient } from "@prisma/client";
+import { unstable_noStore as noStore } from "next/cache";
 
-// Make Prisma a singleton in dev to avoid too many connections
-const globalForPrisma = global as unknown as { prisma?: PrismaClient };
-export const prisma =
-  globalForPrisma.prisma ?? new PrismaClient({ log: ["warn", "error"] });
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-
-// Force dynamic rendering so Next.js doesn’t try to prerender this page
+// Allowed segment options
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+// Prisma singleton (not exported)
+const g = globalThis as unknown as { _prisma?: PrismaClient };
+const prisma = g._prisma ?? new PrismaClient({ log: ["warn", "error"] });
+if (process.env.NODE_ENV !== "production") g._prisma = prisma;
 
 function lastNDays(n: number): string[] {
   const out: string[] = [];
@@ -23,21 +23,26 @@ function lastNDays(n: number): string[] {
   return out;
 }
 
-export default async function Page() {
-  const days = lastNDays(7);
+// handle Decimal/string/number
+function toNum(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "number") return v;
+  return Number((v as any).toString?.() ?? v);
+}
 
+export default async function Page() {
+  noStore();
+
+  const days = lastNDays(7);
   const records = await Promise.all(
     days.map(async (day) => {
-      // Build an inclusive UTC window for that calendar day
       const start = new Date(`${day}T00:00:00.000Z`);
       const end = new Date(`${day}T23:59:59.999Z`);
-
       const drops = await prisma.drop.findMany({
         where: { date: { gte: start, lte: end } },
         include: { company: true },
         orderBy: [{ pctDrop: "desc" }, { dollarDrop: "desc" }],
       });
-
       return { day, drops };
     })
   );
@@ -47,10 +52,7 @@ export default async function Page() {
       <div className="mb-4 flex items-center gap-3">
         <form action="/api/ingest">
           <input type="hidden" name="days" value="7" />
-          <button
-            className="rounded-xl border px-3 py-2 hover:bg-gray-100"
-            type="submit"
-          >
+          <button className="rounded-xl border px-3 py-2 hover:bg-gray-100" type="submit">
             Run 7-Day Backfill
           </button>
         </form>
@@ -86,25 +88,15 @@ export default async function Page() {
                   {drops.map((d) => (
                     <tr key={d.id} className="border-b last:border-b-0">
                       <td className="py-2 pr-4">
-                        <a
-                          className="underline"
-                          href={`/details/${d.company.ticker}/${day}`}
-                        >
+                        <a className="underline" href={`/details/${d.company.ticker}/${day}`}>
                           {d.company.ticker}
                         </a>
                       </td>
-                      <td className="py-2 pr-4">
-                        {Number(d.pctDrop).toFixed(1)}%
-                      </td>
-                      <td className="py-2 pr-4">
-                        ${Number(d.dollarDrop).toFixed(2)}
-                      </td>
+                      <td className="py-2 pr-4">{toNum(d.pctDrop).toFixed(1)}%</td>
+                      <td className="py-2 pr-4">${toNum(d.dollarDrop).toFixed(2)}</td>
                       <td className="py-2 pr-4">{d.priceSource}</td>
                       <td className="py-2 pr-4">
-                        <a
-                          className="underline"
-                          href={`/details/${d.company.ticker}/${day}`}
-                        >
+                        <a className="underline" href={`/details/${d.company.ticker}/${day}`}>
                           View
                         </a>
                       </td>
