@@ -1,6 +1,7 @@
 // app/api/ingest/route.ts
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../../../lib/prisma';
+
 
 // Helper: build array of yyyy-mm-dd strings for N days back (today inclusive)
 function lastNDays(n: number) {
