@@ -1,113 +1,90 @@
 // app/details/[ticker]/[day]/page.tsx
-import { prisma } from '../../../../lib/prisma';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-
-export const dynamic = 'force-dynamic';
+import { format } from 'date-fns';
+import { prisma } from '../../../../lib/prisma';
 
 type Props = { params: { ticker: string; day: string } };
 
 export default async function DetailsPage({ params }: Props) {
-  const ticker = params.ticker.toUpperCase();
-  const day = params.day;
+  const { ticker, day } = params;
 
-  // Basic YYYY-MM-DD check
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
-    notFound();
-  }
+  // Validate date
+  const isoDay = /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+  if (!isoDay) return notFound();
 
-  const start = new Date(`${day}T00:00:00Z`);
-  const end = new Date(`${day}T23:59:59Z`);
+  const start = new Date(`${isoDay}T00:00:00Z`);
+  const end = new Date(`${isoDay}T23:59:59Z`);
 
-  const company = await prisma.company.findFirst({ where: { ticker } });
-  if (!company) notFound();
+  // Get the company
+  const company = await prisma.company.findUnique({ where: { ticker } });
+  if (!company) return notFound();
 
+  // Get the drop for that day
   const drop = await prisma.drop.findFirst({
     where: { companyId: company.id, date: { gte: start, lte: end } },
   });
 
+  // Get reasons + sources
   const reasons = await prisma.reason.findMany({
     where: { companyId: company.id, date: { gte: start, lte: end } },
     include: { sources: true },
     orderBy: { id: 'asc' },
   });
 
-  const priors = await prisma.priorEvidence.findMany({
-    where: { companyId: company.id, date: { gte: start, lte: end } },
-    orderBy: { id: 'asc' },
-  });
-
   return (
-    <main>
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">
-          {ticker} — {day}
-        </h1>
-        <Link className="text-sm underline" href="/">
-          Back to Dashboard
-        </Link>
-      </div>
+    <main className="space-y-6">
+      <a className="text-sm underline" href="/">← Back</a>
 
-      {!drop ? (
-        <p className="text-sm text-gray-500">No drop recorded for this day.</p>
-      ) : (
-        <div className="mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-gray-500">Prev Close</div>
-              <div className="font-mono">${Number(drop.prevClose).toFixed(2)}</div>
-            </div>
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-gray-500">Close</div>
-              <div className="font-mono">${Number(drop.close).toFixed(2)}</div>
-            </div>
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-gray-500">% Drop</div>
-              <div className="font-mono">{Number(drop.pctDrop).toFixed(1)}%</div>
-            </div>
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-gray-500">$ Drop</div>
-              <div className="font-mono">${Number(drop.dollarDrop).toFixed(2)}</div>
-            </div>
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">
+          {company.ticker} — {format(start, 'yyyy-MM-dd')}
+        </h1>
+      </header>
+
+      {drop ? (
+        <section className="rounded-xl border p-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div><div className="text-gray-500">Prev Close</div><div>${drop.prevClose.toFixed(2)}</div></div>
+            <div><div className="text-gray-500">Close</div><div>${drop.close.toFixed(2)}</div></div>
+            <div><div className="text-gray-500">% Drop</div><div>{drop.pctDrop.toFixed(1)}%</div></div>
+            <div><div className="text-gray-500">$ Drop</div><div>${drop.dollarDrop.toFixed(2)}</div></div>
           </div>
           <div className="mt-2 text-xs text-gray-500">Source: {drop.priceSource}</div>
-        </div>
+        </section>
+      ) : (
+        <div className="text-sm text-gray-500">No drop record for this day.</div>
       )}
 
-      <section className="mb-6">
-        <h2 className="font-semibold mb-2">Reasons</h2>
+      <section>
+        <h2 className="text-lg font-semibold mb-2">Reasons</h2>
         {reasons.length === 0 ? (
-          <p className="text-sm text-gray-500">No reasons captured.</p>
+          <div className="text-sm text-gray-500">No reasons saved for this day.</div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {reasons.map((r) => (
               <li key={r.id} className="rounded-xl border p-3">
-                <div className="mb-1">{r.text}</div>
+                <div className="mb-1">
+                  {/* The schema uses llmXAIText, not text */}
+                  {r.llmXAIText || r.sources[0]?.snippet || '(no explanation)'}
+                </div>
+
                 {r.sources.length > 0 && (
                   <ul className="list-disc pl-5 text-sm text-blue-700">
                     {r.sources.map((s) => (
                       <li key={s.id}>
-                        <a className="underline break-all" href={s.url} target="_blank">
-                          {s.url}
+                        <a className="underline" href={s.url} target="_blank" rel="noreferrer">
+                          {s.title || s.url}
                         </a>
+                        {s.publishedAt ? (
+                          <span className="text-gray-500 ml-2">
+                            ({format(new Date(s.publishedAt), 'yyyy-MM-dd')})
+                          </span>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
                 )}
               </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="font-semibold mb-2">Prior Evidence</h2>
-        {priors.length === 0 ? (
-          <p className="text-sm text-gray-500">No prior evidence captured.</p>
-        ) : (
-          <ul className="list-disc pl-5">
-            {priors.map((p) => (
-              <li key={p.id}>{p.note ?? '(no note)'}</li>
             ))}
           </ul>
         )}
