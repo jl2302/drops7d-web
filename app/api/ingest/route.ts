@@ -2,64 +2,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 
-export const runtime = 'nodejs';
-
-function isoDaysBack(n: number): string[] {
-  const out: string[] = [];
-  const now = new Date();
-  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  for (let i = 0; i < n; i++) {
-    const d = new Date(todayUTC);
-    d.setUTCDate(todayUTC.getUTCDate() - i);
-    out.push(d.toISOString().slice(0, 10)); // YYYY-MM-DD
-  }
-  return out;
-}
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const daysParam = Number(searchParams.get('days') ?? '7');
-  const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 7;
+  const days = Math.max(1, Math.min(30, parseInt(searchParams.get('days') ?? '7', 10)));
 
-  const companies = await prisma.company.findMany({ select: { id: true, ticker: true } });
+  const companies = await prisma.company.findMany({ orderBy: { id: 'asc' } });
 
   let created = 0;
-  let skipped = 0;
-
-  for (const day of isoDaysBack(days)) {
-    const date = new Date(`${day}T00:00:00Z`);
+  for (let i = 0; i < days; i++) {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    d.setUTCDate(d.getUTCDate() - i);
 
     for (const c of companies) {
-      // --- mock prices so the UI has data; replace with real pricing later ---
-      const prevClose = Number((50 + Math.random() * 150).toFixed(2)); // 50..200
-      const pctDrop = Number((2 + Math.random() * 8).toFixed(2));      // 2%..10%
-      const close = Number((prevClose * (1 - pctDrop / 100)).toFixed(2));
+      // Simple mock so the UI has something to show; replace with real pricing later
+      const prevClose = 100 + (i % 3);        // 100,101,102...
+      const close = Number((prevClose * 0.95).toFixed(2)); // -5%
       const dollarDrop = Number((prevClose - close).toFixed(2));
-      // ----------------------------------------------------------------------
+      const pctDrop = Number((((prevClose - close) / prevClose) * 100).toFixed(1));
 
-      try {
-        await prisma.drop.upsert({
-          where: { companyId_date: { companyId: c.id, date } }, // compound unique
-          update: {}, // keep existing row as-is
-          create: {
-            company: { connect: { id: c.id } }, // relation, not raw FK
-            date,
-            prevClose,
-            close,
-            pctDrop,
-            dollarDrop,
-            priceSource: 'mock',
-          },
-        });
-        created++;
-      } catch {
-        skipped++;
-      }
+      await prisma.drop.upsert({
+        where: { companyId_date: { companyId: c.id, date: d } },
+        update: {}, // keep existing
+        create: {
+          company: { connect: { id: c.id } }, // relation, not raw FK
+          date: d,
+          prevClose,
+          close,
+          pctDrop,
+          dollarDrop,
+          priceSource: 'mock',
+        },
+      });
+
+      created++;
     }
   }
 
-  return new NextResponse(
-    `OK: created=${created}, skipped=${skipped}`,
-    { status: 200, headers: { 'content-type': 'text/plain' } }
-  );
+  return NextResponse.json({ ok: true, created });
 }
