@@ -1,52 +1,61 @@
 // app/api/export/route.ts
-import { NextResponse } from 'next/server';
-import { prisma } from '../../../lib/prisma';
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = req.nextUrl.searchParams.get('day');
-    const day = searchParams.get('day');
+import { NextRequest } from 'next/server';
+import { prisma } from '../../../lib/prisma'; // from app/api/export/route.ts => ../../../lib/prisma
 
-    if (!day) {
-      return NextResponse.json(
-        { ok: false, error: 'Missing query param: day=YYYY-MM-DD' },
-        { status: 400 }
-      );
-    }
+function todayYMD() {
+  const d = new Date();
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
-    // UTC window for the requested day
-    const start = new Date(`${day}T00:00:00.000Z`);
-    const end   = new Date(`${day}T23:59:59.999Z`);
+function dayRangeUTC(ymd: string) {
+  const start = new Date(`${ymd}T00:00:00Z`);
+  const end = new Date(`${ymd}T23:59:59Z`);
+  return { start, end };
+}
 
-    const drops = await prisma.drop.findMany({
-      where: { date: { gte: start, lte: end } },
-      include: { company: true },
-      orderBy: [{ pctDrop: 'asc' }], // most negative first
-    });
+export async function GET(req: NextRequest) {
+  const day = req.nextUrl.searchParams.get('day') ?? todayYMD();
+  const { start, end } = dayRangeUTC(day);
 
-    // Build CSV
-    const header = ['Date','Ticker','% Drop','$ Drop','Source'];
-    const rows = drops.map(d => [
+  const drops = await prisma.drop.findMany({
+    where: { date: { gte: start, lte: end } },
+    include: { company: true },
+    orderBy: [{ pctDrop: 'desc' }, { dollarDrop: 'desc' }],
+  });
+
+  const rows = [
+    ['ticker', 'date', 'prevClose', 'close', 'dollarDrop', 'pctDrop', 'priceSource'],
+    ...drops.map((d) => [
+      d.company?.ticker ?? '',
       day,
-      d.company.ticker,
-      d.pctDrop.toFixed(1),
-      d.dollarDrop.toFixed(2),
-      d.priceSource ?? ''
-    ]);
-    const csv = [header, ...rows].map(r => r.join(',')).join('\n');
+      d.prevClose?.toString() ?? '',
+      d.close?.toString() ?? '',
+      d.dollarDrop?.toString() ?? '',
+      d.pctDrop?.toString() ?? '',
+      d.priceSource ?? '',
+    ]),
+  ];
 
-    return new NextResponse(csv, {
-      headers: {
-        'content-type': 'text/csv; charset=utf-8',
-        'content-disposition': `attachment; filename="drops-${day}.csv"`
-      }
-    });
-  } catch (err: any) {
-    console.error('EXPORT FAILED:', err);
-    return NextResponse.json(
-      { ok: false, error: err?.message ?? 'Unknown error' },
-      { status: 500 }
-    );
-  }
+  const csv = rows
+    .map((r) =>
+      r
+        .map((v) => {
+          const s = String(v ?? '');
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        })
+        .join(',')
+    )
+    .join('\n');
+
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="drops-${day}.csv"`,
+    },
+  });
 }
