@@ -1,5 +1,5 @@
 // app/settings/page.tsx
-import { prisma } from '../../../lib/prisma';
+import { prisma } from '../../lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
