@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 
-// Helpers
+// ---------- helpers ----------
 function ymd(d: Date) {
   const yyyy = d.getUTCFullYear();
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -22,62 +22,75 @@ function daysBack(n: number) {
   }
   return out;
 }
-function dayStartUTC(ymdStr: string) {
-  return new Date(`${ymdStr}T00:00:00Z`);
+function dayStartUTC(s: string) {
+  return new Date(`${s}T00:00:00Z`);
 }
+// --------------------------------
 
 export async function GET(req: NextRequest) {
   try {
-    // Read ?days= from the query string (defaults to 7, clamp 1..31)
+    // inputs
     const daysParam = req.nextUrl.searchParams.get('days') ?? '7';
     const days = Math.max(1, Math.min(31, Number.isFinite(+daysParam) ? parseInt(daysParam, 10) : 7));
+    const overwrite = ['1', 'true', 'y', 'yes', 'on'].includes(
+      (req.nextUrl.searchParams.get('overwrite') ?? '').toLowerCase()
+    );
 
     const companies = await prisma.company.findMany();
     if (companies.length === 0) {
-      return NextResponse.json({ ok: true, created: 0, updated: 0, message: 'No companies found.' });
+      return NextResponse.json({ ok: true, created: 0, updated: 0, skipped: 0, days, message: 'No companies found' });
     }
 
     const targets = daysBack(days);
+
     let created = 0;
+    let updated = 0;
     let skipped = 0;
 
-    for (const y of targets) {
-      const date = dayStartUTC(y);
+    for (const day of targets) {
+      const date = dayStartUTC(day);
+
       for (const c of companies) {
-        // If a row already exists for this (company, date), skip
         const existing = await prisma.drop.findUnique({
           where: { companyId_date: { companyId: c.id, date } },
           select: { id: true },
         });
-        if (existing) {
-          skipped++;
-          continue;
-        }
 
-        // --- Placeholder price logic (replace with real prices later) ---
-        // Generate plausible numbers so the UI has data
+        // --- placeholder price logic (replace with your real prices later) ---
         const prevClose = +(100 + Math.random() * 50).toFixed(4);
         const close = +(prevClose * (1 - Math.random() * 0.2)).toFixed(4); // up to -20%
         const dollarDrop = +(prevClose - close).toFixed(4);
         const pctDrop = +(((prevClose - close) / prevClose) * 100).toFixed(2);
+        const priceSource = 'placeholder';
 
-        await prisma.drop.create({
-          data: {
-            companyId: c.id,
-            date,
-            prevClose,        // number (Float in your schema)
-            close,            // number (Float in your schema)
-            dollarDrop,       // number
-            pctDrop,          // number
-            priceSource: 'placeholder', // change when you add real pricing
-          },
-        });
-
-        created++;
+        if (existing) {
+          if (overwrite) {
+            await prisma.drop.update({
+              where: { companyId_date: { companyId: c.id, date } },
+              data: { prevClose, close, dollarDrop, pctDrop, priceSource },
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          await prisma.drop.create({
+            data: {
+              companyId: c.id,
+              date,
+              prevClose,
+              close,
+              dollarDrop,
+              pctDrop,
+              priceSource,
+            },
+          });
+          created++;
+        }
       }
     }
 
-    return NextResponse.json({ ok: true, created, skipped, days });
+    return NextResponse.json({ ok: true, created, updated, skipped, days });
   } catch (err) {
     console.error('Ingest error:', err);
     return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
