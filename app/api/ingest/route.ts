@@ -42,13 +42,13 @@ export async function GET(req: Request) {
         where: { companyId_date: { companyId: c.id, date } },
         update: {}, // already exists: leave as-is
         create: {
-          companyId: c.id,
-          date,
-          // Fake numbers so you see something on the page; hook up real prices later.
-          pctDrop: Number((Math.random() * 8 + 2).toFixed(1)),     // 2%–10%
-          dollarDrop: Number((Math.random() * 5 + 1).toFixed(2)),  // $1–$6
-          priceSource: 'backfill-demo',
-        },
+  company: { connect: { id: c.id } }, // <-- relation, not raw FK
+  date,
+  pctDrop,
+  dollarDrop,
+  priceSource: 'mock',
+},
+
       });
 
       created++;
