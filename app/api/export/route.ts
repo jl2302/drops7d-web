@@ -1,45 +1,51 @@
 // app/api/export/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const day = searchParams.get('day');
-  if (!day) {
-    return new NextResponse('Missing ?day=YYYY-MM-DD', { status: 400 });
-  }
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const day = searchParams.get('day');
 
-  const start = new Date(`${day}T00:00:00Z`);
-  const end   = new Date(`${day}T23:59:59Z`);
+    if (!day) {
+      return NextResponse.json(
+        { ok: false, error: 'Missing query param: day=YYYY-MM-DD' },
+        { status: 400 }
+      );
+    }
 
-  const drops = await prisma.drop.findMany({
-    where: { date: { gte: start, lte: end } },
-    include: { company: true },
-    orderBy: [{ pctDrop: 'desc' }, { id: 'asc' }],
-  });
+    // UTC window for the requested day
+    const start = new Date(`${day}T00:00:00.000Z`);
+    const end   = new Date(`${day}T23:59:59.999Z`);
 
-  const esc = (s: any) => {
-    if (s === null || s === undefined) return '';
-    const str = String(s).replace(/"/g, '""');
-    return `"${str}"`;
-  };
+    const drops = await prisma.drop.findMany({
+      where: { date: { gte: start, lte: end } },
+      include: { company: true },
+      orderBy: [{ pctDrop: 'asc' }], // most negative first
+    });
 
-  const rows = [
-    ['Ticker', '% Drop', '$ Drop', 'Source'],
-    ...drops.map((d) => [
+    // Build CSV
+    const header = ['Date','Ticker','% Drop','$ Drop','Source'];
+    const rows = drops.map(d => [
+      day,
       d.company.ticker,
       d.pctDrop.toFixed(1),
       d.dollarDrop.toFixed(2),
-      d.priceSource,
-    ]),
-  ];
+      d.priceSource ?? ''
+    ]);
+    const csv = [header, ...rows].map(r => r.join(',')).join('\n');
 
-  const csv = rows.map((r) => r.map(esc).join(',')).join('\n');
-
-  return new NextResponse(csv, {
-    headers: {
-      'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="drops-${day}.csv"`,
-    },
-  });
+    return new NextResponse(csv, {
+      headers: {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': `attachment; filename="drops-${day}.csv"`
+      }
+    });
+  } catch (err: any) {
+    console.error('EXPORT FAILED:', err);
+    return NextResponse.json(
+      { ok: false, error: err?.message ?? 'Unknown error' },
+      { status: 500 }
+    );
+  }
 }
