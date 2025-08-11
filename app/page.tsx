@@ -1,6 +1,8 @@
 // app/page.tsx
+// app/page.tsx
 import { format } from 'date-fns';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../lib/prisma';   
+
 
 export const dynamic = 'force-dynamic'; // SSR each request (avoids build-time DB issues)
 export const revalidate = 0;
