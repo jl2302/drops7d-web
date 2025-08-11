@@ -3,7 +3,7 @@ import { prisma } from '../../../lib/prisma';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const MIN_DROP_PCT = Number(process.env.MIN_DROP_PCT ?? '4'); // 4% by default
-
+const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
 function isoDay(d: Date) {
   // YYYY-MM-DD in UTC
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
@@ -126,25 +126,31 @@ export async function GET(req: NextRequest) {
               select: { id: true }
             });
 
-            await prisma.drop.upsert({
-              where: { companyId_date: { companyId: c.id, date: dayStartUTC(day) } },
-              update: {
-                prevClose: prev.toFixed(4), // Decimal in schema: send as string
-                close: close.toFixed(4),
-                dollarDrop,
-                pctDrop,
-                priceSource: 'yahoo'
-              },
-              create: {
-                company: { connect: { id: c.id } },
-                date: dayStartUTC(day),
-                prevClose: prev.toFixed(4),
-                close: close.toFixed(4),
-                dollarDrop,
-                pctDrop,
-                priceSource: 'yahoo'
-              }
-            });
+           await prisma.drop.upsert({
+  where: { companyId_date: { companyId: c.id, date: dayStartUTC(day) } },
+  update: {
+    // CHANGE THESE TWO LINES: keep numbers, not strings
+    prevClose: round4(prev),
+    close: round4(close),
+
+    dollarDrop,            // already number
+    pctDrop,               // already number
+    priceSource: 'yahoo',
+  },
+  create: {
+    company: { connect: { id: c.id } },
+    date: dayStartUTC(day),
+
+    // CHANGE THESE TWO LINES: keep numbers, not strings
+    prevClose: round4(prev),
+    close: round4(close),
+
+    dollarDrop,
+    pctDrop,
+    priceSource: 'yahoo',
+  }
+});
+
 
             if (existing) updated++;
             else created++;
